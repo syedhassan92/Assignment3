@@ -32,7 +32,7 @@ app.get("/tasks/:id", (req, res) => {
 });
 
 app.post("/tasks", (req, res) => {
-  const { title, done } = req.body;
+  const { title, done = 0 } = req.body;
   if (!title || title.trim() === "") {
     res.status(400).json({ error: "Title is required" });
     return;

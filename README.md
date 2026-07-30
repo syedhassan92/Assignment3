@@ -71,7 +71,7 @@ SELECT * FROM tasks;
 ## Example API Request
 
 ```bash
-curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Buy milk"}'
+curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d "{\"title\":\"Learn SQLite\"}"
 ```
 
 ## Swagger Documentation
