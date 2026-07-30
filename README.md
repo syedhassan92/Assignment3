@@ -1,6 +1,6 @@
 # Task API
 
-Simple Express task management API with in-memory storage and OpenAPI docs.
+Simple Express task management API using SQLite with OpenAPI docs.
 
 ## Prerequisites
 
@@ -15,10 +15,18 @@ npm install
 
 ## Run
 
-Development mode (uses nodemon via npm script):
+Development mode (uses `nodemon` via the npm `start` script):
 
 ```bash
 npm start
+```
+
+If you don't have `nodemon` installed globally you can run the app with:
+
+```bash
+npx nodemon app.js
+# or
+node app.js
 ```
 
 App base URL:
@@ -28,6 +36,25 @@ App base URL:
 API docs (Swagger UI):
 
 - http://localhost:3000/docs
+
+## Database
+
+- **Why SQLite:** Lightweight, zero-configuration, file-based database ideal for small apps, demos, and assignments. It avoids the overhead of running a separate database server while providing ACID transactions and a familiar SQL surface.
+- **Database file location:** `tasks.db` in the project root: [tasks.db](tasks.db#L1).
+
+One of the SQL statements executed on startup (in `db.js`) is:
+
+```sql
+INSERT INTO tasks (title, done) VALUES ('Buy milk', 0);
+```
+
+The application code uses prepared statements for queries, for example:
+
+```sql
+SELECT * FROM tasks;
+```
+![Database viewer Screenshot](dbviewer.png)
+
 
 ## Endpoint Table
 
@@ -39,25 +66,13 @@ API docs (Swagger UI):
 | GET    | `/tasks/:id`| Get a task by id                              | `200`          | `404` if not found             |
 | POST   | `/tasks`    | Create a new task                             | `201`          | `400` if `title` missing/empty |
 | PUT    | `/tasks/:id`| Update task `title` and/or `done`             | `200`          | `404` if not found             |
-| DELETE | `/tasks/:id`| Delete a task by id                           | `204`          | `404` if not found             |
+| DELETE | `/tasks/:id`| Delete a task by id                           | `200`          | `404` if not found             |
 
 ## Example API Request
 
 ```bash
-curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d "{\"title\":\"Buy milk\"}"
-HTTP/1.1 201 Created
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 40
-ETag: W/"28-PpSBYV7i68cXyGc7AhjVpkZkY5Q"
-Date: Mon, 27 Jul 2026 15:47:43 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-
-{"id":4,"title":"Buy milk","done":false}
+curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Buy milk"}'
 ```
-
-
 
 ## Swagger Documentation
 
@@ -71,7 +86,5 @@ Screenshot:
 
 ## Notes
 
-- Data is stored in memory. Restarting the server resets tasks.
-- Current `PUT /tasks/:id` response returns the full tasks array.
-"# FlyRankAI_Assignment2" 
-"# FlyRankAI_Assignment2" 
+- Data is stored in `tasks.db` (file-based SQLite). Restarting the server preserves tasks as long as `tasks.db` is not deleted.
+- `PUT /tasks/:id` returns the updated task (not the full tasks array).
