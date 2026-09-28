@@ -3,7 +3,7 @@ const app = express();
 const port = 3000;
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./openapi.json');
-const db = require("./db.js");
+const { pool, initializeDatabase } = require("./db.js");
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.use(express.json());
@@ -12,67 +12,99 @@ app.get("/", (req, res) => {
   res.json({ name: "Task API", version: "1.0", endpoints: ["/tasks"] });
 });
 
-app.get("/health", (req, res) => {
-  res.json({ status: "OK" });
-});
-
-app.get("/tasks", (req, res) => {
-  const tasks = db.prepare("SELECT * FROM tasks").all();
-  res.json(tasks);
-});
-
-app.get("/tasks/:id", (req, res) => {
-  const id = req.params.id;
-  const tasks = db.prepare("SELECT * FROM tasks where id = ?").get(id);
-  if (!tasks) {
-    res.status(404).json({ error: `Task ${id} not found` });
-    return;
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "OK", db: "ok" });
+  } catch (error) {
+    res.status(503).json({ status: "ERROR", db: "unavailable" });
   }
-  res.json(tasks);
 });
 
-app.post("/tasks", (req, res) => {
+app.get("/tasks", async (req, res, next) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM tasks ORDER BY id");
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/tasks/:id", async (req, res, next) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM tasks WHERE id = $1", [req.params.id]);
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/tasks", async (req, res, next) => {
   const { title, done = 0 } = req.body;
   if (!title || title.trim() === "") {
     res.status(400).json({ error: "Title is required" });
     return;
   }
-  const newTask = db.prepare("INSERT INTO tasks (title, done) VALUES (?, ?)").run(title, done ? 1 : 0);
-  res.status(201).json(db.prepare("SELECT * FROM tasks WHERE id = ?").get(newTask.lastInsertRowid));
+  try {
+    const { rows } = await pool.query(
+      "INSERT INTO tasks (title, done) VALUES ($1, $2) RETURNING *",
+      [title.trim(), Boolean(done)]
+    );
+    res.status(201).json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.put("/tasks/:id", (req, res) => {
-    const id = req.params.id;
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-
-    if (!task) {
-        return res.status(404).json({
-            error: `Task ${id} not found`
-        });
+app.put("/tasks/:id", async (req, res, next) => {
+  try {
+    const existing = await pool.query("SELECT * FROM tasks WHERE id = $1", [req.params.id]);
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: "Task not found" });
+      return;
     }
 
+    const task = existing.rows[0];
     const title = req.body.title ?? task.title;
-    const done = req.body.done ?? task.done;
-
-    db.prepare("UPDATE tasks SET title = ?, done = ? WHERE id = ?").run(title, done ? 1 : 0, id);
-
-    res.json(db.prepare("SELECT * FROM tasks WHERE id = ?").get(id));
-});
-
-app.delete("/tasks/:id", (req, res) => {
-    const id = req.params.id;
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-
-    if (!task) {
-        return res.status(404).json({
-            error: `Task ${id} not found`
-        });
+    if (!title || title.trim() === "") {
+      res.status(400).json({ error: "Title is required" });
+      return;
     }
-    db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
-
-    res.json({message: `Task ${id} deleted`});
+    const done = req.body.done ?? task.done;
+    const { rows } = await pool.query(
+      "UPDATE tasks SET title = $1, done = $2 WHERE id = $3 RETURNING *",
+      [title.trim(), Boolean(done), req.params.id]
+    );
+    res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.listen(port, () => {
-  console.log(`App listening at http://localhost:${port}`);
+app.delete("/tasks/:id", async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.query("DELETE FROM tasks WHERE id = $1", [req.params.id]);
+    if (rowCount === 0) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
 });
+
+initializeDatabase()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`App listening at http://localhost:${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error("Database initialization failed", error);
+    process.exitCode = 1;
+  });

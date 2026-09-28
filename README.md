@@ -1,90 +1,82 @@
 # Task API
 
-Simple Express task management API using SQLite with OpenAPI docs.
+An Express CRUD API backed by PostgreSQL. The database and API run together with Docker Compose.
 
 ## Prerequisites
 
-- Node.js 18+ (or newer)
-- npm
+- Docker Desktop
+- Git
 
-## Setup
+## Run The Stack
 
-```bash
-npm install
+Copy the example environment file, then start the API and PostgreSQL:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
 ```
 
-## Run
+The API is available at http://localhost:3000 and Swagger is available at http://localhost:3000/docs.
 
-Development mode (uses `nodemon` via the npm `start` script):
-
-```bash
-npm start
-```
-
-If you don't have `nodemon` installed globally you can run the app with:
-
-```bash
-npx nodemon app.js
-# or
-node app.js
-```
-
-App base URL:
-
-- http://localhost:3000
-
-API docs (Swagger UI):
-
-- http://localhost:3000/docs
+The database password is read from `.env`, which is ignored by Git. Only `.env.example` is committed.
 
 ## Database
 
-- **Why SQLite:** Lightweight, zero-configuration, file-based database ideal for small apps, demos, and assignments. It avoids the overhead of running a separate database server while providing ACID transactions and a familiar SQL surface.
-- **Database file location:** `tasks.db` in the project root: [tasks.db](tasks.db#L1).
+PostgreSQL creates the `tasks` table on startup and seeds three tasks only when the table is empty. The named `taskdata` volume keeps rows after `docker compose down` and `docker compose up`.
 
-One of the SQL statements executed on startup (in `db.js`) is:
+Inspect the database:
 
-```sql
-INSERT INTO tasks (title, done) VALUES ('Buy milk', 0);
+```powershell
+docker compose exec db psql -U postgres -d tasks -c "SELECT * FROM tasks;"
 ```
 
-The application code uses prepared statements for queries, for example:
+![Database viewer screenshot](dbviewer.png)
 
-```sql
-SELECT * FROM tasks;
+## Endpoints
+
+| Method | Path | Description | Success | Errors |
+| --- | --- | --- | --- | --- |
+| GET | `/` | API metadata | 200 | - |
+| GET | `/health` | API and database health | 200 | 503 |
+| GET | `/tasks` | List all tasks | 200 | - |
+| GET | `/tasks/:id` | Get one task | 200 | 404 |
+| POST | `/tasks` | Create a task | 201 | 400 |
+| PUT | `/tasks/:id` | Update a task | 200 | 400, 404 |
+| DELETE | `/tasks/:id` | Delete a task | 204 | 404 |
+
+All database queries use PostgreSQL parameter placeholders such as `$1`; user input is never concatenated into SQL.
+
+## CRUD Checks
+
+```powershell
+curl.exe -i http://localhost:3000/tasks
+curl.exe -i http://localhost:3000/tasks/999
+curl.exe -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Learn Docker","done":false}'
+curl.exe -i -X PUT http://localhost:3000/tasks/1 -H "Content-Type: application/json" -d '{"done":true}'
+curl.exe -i -X DELETE http://localhost:3000/tasks/1
 ```
-![Database viewer Screenshot](dbviewer.png)
 
+The expected success statuses are `200`, `201`, `200`, and `204`. Unknown task IDs return `404` with `{ "error": "Task not found" }`.
 
-## Endpoint Table
+## Persistence Check
 
-| Method | Path        | Description                                   | Success Status | Error Status                   |
-|--------|-------------|-----------------------------------------------|----------------|--------------------------------|
-| GET    | `/`         | API metadata (`name`, `version`, `endpoints`) | `200`          | -                              |
-| GET    | `/health`   | Health check                                  | `200`          | -                              |
-| GET    | `/tasks`    | Get all tasks                                 | `200`          | -                              |
-| GET    | `/tasks/:id`| Get a task by id                              | `200`          | `404` if not found             |
-| POST   | `/tasks`    | Create a new task                             | `201`          | `400` if `title` missing/empty |
-| PUT    | `/tasks/:id`| Update task `title` and/or `done`             | `200`          | `404` if not found             |
-| DELETE | `/tasks/:id`| Delete a task by id                           | `200`          | `404` if not found             |
+Create a task, stop the stack, start it again, and request the list:
 
-## Example API Request
-
-```bash
-curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d "{\"title\":\"Learn SQLite\"}"
+```powershell
+docker compose down
+docker compose up -d
+curl.exe http://localhost:3000/tasks
 ```
 
-## Swagger Documentation
+The task remains because PostgreSQL uses the `taskdata` volume.
 
-Swagger UI is available at:
+## Development Without Docker
 
-http://localhost:3000/docs
+Install dependencies and provide a local PostgreSQL connection string in `.env`:
 
-Screenshot:
+```powershell
+npm install
+npm start
+```
 
-![Swagger UI Screenshot](swagger_ss.png)
-
-## Notes
-
-- Data is stored in `tasks.db` (file-based SQLite). Restarting the server preserves tasks as long as `tasks.db` is not deleted.
-- `PUT /tasks/:id` returns the updated task (not the full tasks array).
+The API keeps the same routes and response behavior while the storage engine changes from SQLite to PostgreSQL.
